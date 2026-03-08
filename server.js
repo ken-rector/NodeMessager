@@ -140,7 +140,7 @@ async function verifyCaptchaToken(captchaToken, remoteIp) {
   return { ok: true };
 }
 
-async function sendSmsAlert(required = false) {
+async function sendSmsAlert(payload = {}, required = false) {
   const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
 
   if (!smsEnabled) {
@@ -178,10 +178,19 @@ async function sendSmsAlert(required = false) {
       throw new Error('Twilio config error: ALERT_SMS_PHONE must be a different destination number than TWILIO_FROM_NUMBER.');
     }
 
+    // Build SMS message from payload with custom header
+    const smsHeader = payload.smsTitle || 'Demo Request received';
+    const smsBody =
+      `${smsHeader}\n` +
+      `Name: ${payload.name || ''}\n` +
+      `Company: ${payload.company || ''}\n` +
+      `Email: ${payload.email || ''}\n` +
+      `Phone: ${payload.phone || ''}`;
+
     const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
     const twilioParams = new URLSearchParams({
       To: smsAlertPhone,
-      Body: smsAlertMessage
+      Body: smsBody
     });
 
     if (twilioMessagingServiceSid) {
@@ -280,12 +289,12 @@ async function handleSendEmailRequest(req, res, requireSms) {
     const info = await transporter.sendMail(mailOptions);
 
     if (requireSms) {
-      await sendSmsAlert(true);
+      await sendSmsAlert(payload, true);
       return res.status(200).send('Email and SMS sent: ' + info.response);
     }
 
     try {
-      await sendSmsAlert();
+      await sendSmsAlert(payload);
     } catch (smsError) {
       console.error('SMS alert failed:', smsError);
     }
