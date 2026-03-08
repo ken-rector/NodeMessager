@@ -1,4 +1,8 @@
-require('dotenv').config();
+try {
+  require('dotenv').config();
+} catch {
+  // dotenv is optional when environment variables are injected by IIS/service.
+}
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -76,12 +80,8 @@ const captchaVerifyUrl = process.env.CAPTCHA_VERIFY_URL || '';
 const captchaSecretKey = process.env.CAPTCHA_SECRET_KEY || '';
 const skipCaptcha = process.env.SKIP_CAPTCHA === 'true';
 
-const smsEndpointUrl = process.env.SMS_ENDPOINT_URL || '';
-const smsEndpointMethod = (process.env.SMS_ENDPOINT_METHOD || 'GET').toUpperCase();
 const smsAlertPhone = process.env.ALERT_SMS_PHONE || '';
 const smsAlertMessage = process.env.SMS_ALERT_MESSAGE || '';
-const smsAuthHeaderName = process.env.SMS_AUTH_HEADER_NAME || '';
-const smsAuthHeaderValue = process.env.SMS_AUTH_HEADER_VALUE || '';
 const smsEnabled = process.env.SMS_ENABLED !== 'false';
 const smsProvider = (process.env.SMS_PROVIDER || '').trim().toUpperCase();
 const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID || '';
@@ -208,43 +208,8 @@ async function sendSmsAlert(required = false) {
     return;
   }
 
-  if (!smsEndpointUrl) {
-    if (required) {
-      throw new Error('SMS endpoint is not configured (SMS_ENDPOINT_URL).');
-    }
-    return;
-  }
-
-  const headers = {};
-  if (smsAuthHeaderValue) {
-    headers[smsAuthHeaderName] = smsAuthHeaderValue;
-  }
-
-  let requestUrl = smsEndpointUrl;
-  let requestBody;
-
-  if (smsEndpointMethod === 'GET') {
-    const url = new URL(smsEndpointUrl);
-    url.searchParams.set('message', smsAlertMessage);
-    url.searchParams.set('phone', smsAlertPhone);
-    requestUrl = url.toString();
-  } else {
-    headers['Content-Type'] = 'application/json';
-    requestBody = JSON.stringify({
-      message: smsAlertMessage,
-      phone: smsAlertPhone
-    });
-  }
-
-  const smsResponse = await fetch(requestUrl, {
-    method: smsEndpointMethod,
-    headers,
-    body: requestBody
-  });
-
-  if (!smsResponse.ok) {
-    const responseBody = await smsResponse.text();
-    throw new Error(`SMS endpoint failed (${smsResponse.status}): ${responseBody}`);
+  if (required) {
+    throw new Error('Twilio is not configured. Set SMS_PROVIDER=TWILIO and provide Twilio credentials.');
   }
 }
 
