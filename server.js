@@ -23,19 +23,39 @@ const allowedOrigins = (process.env.CORS_ORIGINS || [
 
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-      return;
+    if (!origin) {
+      return callback(null, true);
     }
-
-    callback(new Error(`Not allowed by CORS: ${origin}`));
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    if (
+      origin.endsWith('.assignpros.com') ||
+      origin.endsWith('.securityassignments.com')
+    ) {
+      return callback(null, true);
+    }
+    console.log(`Blocked CORS origin: ${origin}`);
+    return callback(new Error(`Not allowed by CORS: ${origin}`));
   },
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true
 };
 
+// Manual OPTIONS handler for preflight requests
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
