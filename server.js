@@ -178,10 +178,8 @@ async function sendSmsAlert(payload = {}, required = false) {
       throw new Error('Twilio config error: ALERT_SMS_PHONE must be a different destination number than TWILIO_FROM_NUMBER.');
     }
 
-    // Build SMS message from payload with custom header
-    const smsHeader = payload.smsTitle || 'Demo Request received';
+    // Build SMS message from payload
     const smsBody =
-      `${smsHeader}\n` +
       `Name: ${payload.name || ''}\n` +
       `Company: ${payload.company || ''}\n` +
       `Email: ${payload.email || ''}\n` +
