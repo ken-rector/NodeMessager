@@ -1,8 +1,8 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
-const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -13,6 +13,8 @@ const allowedOrigins = (process.env.CORS_ORIGINS || [
   'https://messages.assignpros.com',
   'https://securityassignments.com',
   'https://www.securityassignments.com',
+  'https://suretalents.com',
+  'https://www.suretalents.com',
   'http://localhost:4200',
   'https://localhost:4200',
   'http://localhost:4300'
@@ -21,53 +23,64 @@ const allowedOrigins = (process.env.CORS_ORIGINS || [
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+// --- UNIVERSAL OPTIONS HANDLER (fixes your preflight issue) ---
+app.options('*', (req, res) => {
+  const origin = req.headers.origin;
+
+  // If the request has an Origin and it's allowed, echo it back
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    // Safe fallback for preflight requests with no Origin
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.header('Access-Control-Max-Age', '86400'); // cache preflight for 24h
+  return res.sendStatus(204);
+});
+
+// --- MAIN CORS MIDDLEWARE ---
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin) {
-      return callback(null, true);
-    }
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
+    // Allow non-browser requests
+    if (!origin) return callback(null, true);
+
+    // Direct match
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+
+    // Wildcard subdomains
     if (
       origin.endsWith('.assignpros.com') ||
-      origin.endsWith('.securityassignments.com')
+      origin.endsWith('.securityassignments.com') ||
+      origin.endsWith('.suretalents.com')
     ) {
       return callback(null, true);
     }
+
     console.log(`Blocked CORS origin: ${origin}`);
     return callback(new Error(`Not allowed by CORS: ${origin}`));
   },
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  credentials: true
+  credentials: true,
+  optionsSuccessStatus: 204
 };
-
-// Manual OPTIONS handler for preflight requests
-app.use((req, res, next) => {
-  if (req.method === 'OPTIONS') {
-    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    return res.sendStatus(200);
-  }
-  next();
-});
 
 app.use(cors(corsOptions));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
-const captchaVerifyUrl = process.env.CAPTCHA_VERIFY_URL || 'https://www.google.com/recaptcha/api/siteverify';
-const captchaSecretKey = process.env.CAPTCHA_SECRET_KEY || (process.env.NODE_ENV === 'production' ? '' : '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe');
+const captchaVerifyUrl = process.env.CAPTCHA_VERIFY_URL || '';
+const captchaSecretKey = process.env.CAPTCHA_SECRET_KEY || '';
 const skipCaptcha = process.env.SKIP_CAPTCHA === 'true';
 
 const smsEndpointUrl = process.env.SMS_ENDPOINT_URL || '';
 const smsEndpointMethod = (process.env.SMS_ENDPOINT_METHOD || 'GET').toUpperCase();
 const smsAlertPhone = process.env.ALERT_SMS_PHONE || '';
-const smsAlertMessage = process.env.SMS_ALERT_MESSAGE || 'New SecurityAssignments lead request. Check your inbox.';
-const smsAuthHeaderName = process.env.SMS_AUTH_HEADER_NAME || 'x-internal-key';
+const smsAlertMessage = process.env.SMS_ALERT_MESSAGE || '';
+const smsAuthHeaderName = process.env.SMS_AUTH_HEADER_NAME || '';
 const smsAuthHeaderValue = process.env.SMS_AUTH_HEADER_VALUE || '';
 const smsEnabled = process.env.SMS_ENABLED !== 'false';
 const smsProvider = (process.env.SMS_PROVIDER || '').trim().toUpperCase();
@@ -128,6 +141,8 @@ async function verifyCaptchaToken(captchaToken, remoteIp) {
 }
 
 async function sendSmsAlert(required = false) {
+  const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
+
   if (!smsEnabled) {
     if (required) {
       throw new Error('SMS is disabled (SMS_ENABLED=false).');
@@ -156,6 +171,11 @@ async function sendSmsAlert(required = false) {
         throw new Error('Twilio sender is not configured (TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID).');
       }
       return;
+    }
+
+    // Twilio rejects sending to the same number as the sender.
+    if (twilioFromNumber && normalizePhone(twilioFromNumber) === normalizePhone(smsAlertPhone)) {
+      throw new Error('Twilio config error: ALERT_SMS_PHONE must be a different destination number than TWILIO_FROM_NUMBER.');
     }
 
     const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
@@ -228,9 +248,6 @@ async function sendSmsAlert(required = false) {
   }
 }
 
-// Serve static files from the Angular app
-app.use(express.static(path.join(__dirname, 'dist/assignpros-homesite')));
-
 async function handleSendEmailRequest(req, res, requireSms) {
   const payload = typeof req.body === 'string'
     ? { notes: req.body, type: 'contact' }
@@ -253,10 +270,10 @@ async function handleSendEmailRequest(req, res, requireSms) {
     zip = ''
   } = payload;
 
-  const smtpHost = process.env.SMTP_HOST || 'mail.assignpros.com';
+  const smtpHost = process.env.SMTP_HOST || '';
   const smtpPort = Number(process.env.SMTP_PORT || 587);
-  const smtpUser = process.env.SMTP_USER || 'noreply@assignpros.com';
-  const smtpPass = process.env.SMTP_PASS || 'KeRe2023#$ecure';
+  const smtpUser = process.env.SMTP_USER || '';
+  const smtpPass = process.env.SMTP_PASS || '';
 
   let transporter = nodemailer.createTransport({
     host: smtpHost,
@@ -321,11 +338,6 @@ app.post('/send-email', async (req, res) => {
 
 app.post('/send-email-sms', async (req, res) => {
   await handleSendEmailRequest(req, res, true);
-});
-
-// Catch all other routes and return the index file
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist/assignpros-homesite/index.html'));
 });
 
 app.listen(port, () => {
