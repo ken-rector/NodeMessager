@@ -1,4 +1,5 @@
 # NodeMessager Setup Guide (Windows Server / IIS + NSSM)
+# This is required when setting up this Node js project
 
 NodeMessager is a Node.js backend that handles contact/demo request form submissions from websites. It sends email via SMTP and optional SMS alerts via Twilio. IIS acts as a reverse proxy to the Node process, which is hosted as a Windows service via NSSM.
 
